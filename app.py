@@ -2,67 +2,201 @@ import streamlit as st
 from textblob import TextBlob
 import pandas as pd
 from datetime import datetime
+import sqlite3
 
-# 1. SETUP HALAMAN & DATABASE SEMENTARA (SESSION STATE)
-st.set_page_config(page_title="MindFlow", page_icon="🧠")
+# -----------------------------------
+# PAGE CONFIG
+# -----------------------------------
 
-# Kita pakai session_state untuk menyimpan riwayat jurnal selama aplikasi berjalan
-if 'journal_history' not in st.session_state:
-    st.session_state.journal_history = []
+st.set_page_config(
+    page_title="MindFlow",
+    page_icon="🧠",
+    layout="centered"
+)
 
-# 2. TAMPILAN UI (HEADER)
-st.title("🧠 MindFlow: AI Mood Journal")
-st.write("Ceritain hari ini kamu ngerasa gimana. AI akan menganalisis mood kamu!")
+# -----------------------------------
+# DATABASE SETUP
+# -----------------------------------
 
-# 3. INPUT DARI USER
-user_input = st.text_area("Tulis jurnal kamu di sini (Gunakan Bahasa Inggris untuk hasil terbaik di MVP ini):", height=150)
+conn = sqlite3.connect("mindflow.db", check_same_thread=False)
+cursor = conn.cursor()
 
-# 4. TOMBOL ANALISIS & LOGIKA AI
-if st.button("Simpan & Analisis Mood"):
-    if user_input:
-        # Proses Analisis Sentimen menggunakan TextBlob
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS journals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT,
+    journal TEXT,
+    mood_score REAL,
+    mood_label TEXT
+)
+""")
+
+conn.commit()
+
+# -----------------------------------
+# HEADER
+# -----------------------------------
+
+st.title("🧠 MindFlow")
+st.write("Tell me how your day’s been. Let your thoughts flow out for a bit.")
+
+# -----------------------------------
+# JOURNAL INPUT
+# -----------------------------------
+
+user_input = st.text_area(
+    "What’s on your mind today?",
+    height=180,
+    placeholder="Write whatever comes to mind..."
+)
+
+# -----------------------------------
+# MOOD ANALYSIS
+# -----------------------------------
+
+if st.button("Analyze My Mood"):
+
+    if user_input.strip():
+
         analysis = TextBlob(user_input)
-        score = analysis.sentiment.polarity  # Hasilnya antara -1.0 (Sangat Sedih/Marah) sampai 1.0 (Sangat Bahagia)
-        
-        # Menentukan kategori mood berdasarkan skor
+        score = analysis.sentiment.polarity
+
+        # Mood system
         if score > 0.3:
-            mood = "Bahagia 😊"
-            color = "success"
+            mood = {
+                "label": "Feeling Good ✨",
+                "color": "success",
+                "message": "You seem to be in a pretty positive headspace today."
+            }
+
         elif score < -0.3:
-            mood = "Sedih / Stres 😔"
-            color = "error"
+            mood = {
+                "label": "Emotionally Heavy 😔",
+                "color": "error",
+                "message": "Looks like today’s been weighing on you a bit."
+            }
+
         else:
-            mood = "Netral 😐"
-            color = "info"
-            
-        # Tampilkan hasil ke user
-        if color == "success": st.success(f"Mood kamu terdeteksi: {mood} (Skor: {score:.2f})")
-        elif color == "error": st.error(f"Mood kamu terdeteksi: {mood} (Skor: {score:.2f}). Jangan lupa istirahat ya!")
-        else: st.info(f"Mood kamu terdeteksi: {mood} (Skor: {score:.2f})")
-        
-        # Simpan data ke history
-        st.session_state.journal_history.append({
-            "Waktu": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "Jurnal": user_input,
-            "Skor Mood": score,
-            "Kategori": mood
-        })
+            mood = {
+                "label": "Balanced 🌿",
+                "color": "info",
+                "message": "Your mood feels fairly steady today."
+            }
+
+        result = f"{mood['message']} (Score: {score:.2f})"
+
+        # Display result
+        if mood["color"] == "success":
+            st.success(result)
+
+        elif mood["color"] == "error":
+            st.error(result)
+
+        else:
+            st.info(result)
+
+        # Save to database
+        cursor.execute("""
+        INSERT INTO journals (
+            timestamp,
+            journal,
+            mood_score,
+            mood_label
+        )
+        VALUES (?, ?, ?, ?)
+        """, (
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            user_input,
+            score,
+            mood["label"]
+        ))
+
+        conn.commit()
+
     else:
-        st.warning("Tulis sesuatu dulu ya sebelum dianalisis!")
+        st.warning("Write something first before analyzing your mood.")
 
-# 5. VISUALISASI DATA (TRACKING MOOD)
+# -----------------------------------
+# LOAD JOURNAL DATA
+# -----------------------------------
+
+df = pd.read_sql_query(
+    "SELECT * FROM journals ORDER BY id ASC",
+    conn
+)
+
+# -----------------------------------
+# MOOD JOURNEY SECTION
+# -----------------------------------
+
 st.divider()
-st.subheader("📈 Tren Mood Kamu")
+st.subheader("📈 Your Mood Journey")
 
-if st.session_state.journal_history:
-    # Ubah data history jadi Pandas DataFrame biar gampang dibikin grafik
-    df = pd.DataFrame(st.session_state.journal_history)
-    
-    # Tampilkan grafik garis (Line Chart) bawaan Streamlit
-    st.line_chart(df.set_index("Waktu")["Skor Mood"])
-    
-    # Tampilkan tabel riwayat di bawahnya
-    with st.expander("Lihat Riwayat Jurnal"):
-        st.dataframe(df)
+if not df.empty:
+
+    # Chart
+    chart_df = df[["timestamp", "mood_score"]].copy()
+    chart_df = chart_df.set_index("timestamp")
+
+    st.line_chart(chart_df)
+
+    # History
+    with st.expander("📖 View Journal History"):
+
+        display_df = df.rename(columns={
+            "timestamp": "Time",
+            "journal": "Journal Entry",
+            "mood_score": "Mood Score",
+            "mood_label": "Mood"
+        })
+
+        st.dataframe(
+            display_df,
+            use_container_width=True
+        )
+
+    # -----------------------------------
+    # DELETE SECTION
+    # -----------------------------------
+
+    st.divider()
+
+    if "confirm_delete" not in st.session_state:
+        st.session_state.confirm_delete = False
+
+    if not st.session_state.confirm_delete:
+
+        if st.button("🗑 Delete All Entries"):
+            st.session_state.confirm_delete = True
+            st.rerun()
+
+    else:
+
+        st.warning(
+            "Are you sure? This will permanently delete your journal history."
+        )
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("Yes, Delete Everything"):
+
+                cursor.execute("DELETE FROM journals")
+                conn.commit()
+
+                st.session_state.confirm_delete = False
+
+                st.success("Your journal history has been cleared.")
+
+                st.rerun()
+
+        with col2:
+            if st.button("Cancel"):
+
+                st.session_state.confirm_delete = False
+                st.rerun()
+
 else:
-    st.write("Belum ada data. Tulis jurnal pertamamu di atas!")
+    st.write(
+        "Your mood history will start showing up here once you add entries."
+    )
