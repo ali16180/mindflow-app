@@ -3,6 +3,8 @@ from textblob import TextBlob
 import pandas as pd
 from datetime import datetime
 import sqlite3
+import uuid
+from streamlit_local_storage import LocalStorage
 
 # -----------------------------------
 # PAGE CONFIG
@@ -15,6 +17,18 @@ st.set_page_config(
 )
 
 # -----------------------------------
+# LOCAL STORAGE / USER ID
+# -----------------------------------
+
+localS = LocalStorage()
+
+user_id = localS.getItem("mindflow_user_id")
+
+if not user_id:
+    user_id = str(uuid.uuid4())
+    localS.setItem("mindflow_user_id", user_id)
+
+# -----------------------------------
 # DATABASE SETUP
 # -----------------------------------
 
@@ -24,6 +38,7 @@ cursor = conn.cursor()
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS journals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT,
     timestamp TEXT,
     journal TEXT,
     mood_score REAL,
@@ -38,7 +53,9 @@ conn.commit()
 # -----------------------------------
 
 st.title("🧠 MindFlow")
-st.write("Tell me how your day’s been. Let your thoughts flow out for a bit.")
+st.write(
+    "Tell me how your day’s been. Let your thoughts flow out for a bit."
+)
 
 # -----------------------------------
 # JOURNAL INPUT
@@ -63,29 +80,38 @@ if st.button("Analyze My Mood"):
 
         # Mood system
         if score > 0.3:
+
             mood = {
                 "label": "Feeling Good ✨",
                 "color": "success",
-                "message": "You seem to be in a pretty positive headspace today."
+                "message": (
+                    "You seem to be in a pretty positive headspace today."
+                )
             }
 
         elif score < -0.3:
+
             mood = {
                 "label": "Emotionally Heavy 😔",
                 "color": "error",
-                "message": "Looks like today’s been weighing on you a bit."
+                "message": (
+                    "Looks like today’s been weighing on you a bit."
+                )
             }
 
         else:
+
             mood = {
                 "label": "Balanced 🌿",
                 "color": "info",
-                "message": "Your mood feels fairly steady today."
+                "message": (
+                    "Your mood feels fairly steady today."
+                )
             }
 
         result = f"{mood['message']} (Score: {score:.2f})"
 
-        # Display result
+        # Display mood result
         if mood["color"] == "success":
             st.success(result)
 
@@ -95,16 +121,18 @@ if st.button("Analyze My Mood"):
         else:
             st.info(result)
 
-        # Save to database
+        # Save entry
         cursor.execute("""
         INSERT INTO journals (
+            user_id,
             timestamp,
             journal,
             mood_score,
             mood_label
         )
-        VALUES (?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?)
         """, (
+            user_id,
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             user_input,
             score,
@@ -113,20 +141,30 @@ if st.button("Analyze My Mood"):
 
         conn.commit()
 
+        st.rerun()
+
     else:
-        st.warning("Write something first before analyzing your mood.")
+        st.warning(
+            "Write something first before analyzing your mood."
+        )
 
 # -----------------------------------
-# LOAD JOURNAL DATA
+# LOAD USER DATA
 # -----------------------------------
 
 df = pd.read_sql_query(
-    "SELECT * FROM journals ORDER BY id ASC",
-    conn
+    """
+    SELECT *
+    FROM journals
+    WHERE user_id = ?
+    ORDER BY id ASC
+    """,
+    conn,
+    params=(user_id,)
 )
 
 # -----------------------------------
-# MOOD JOURNEY SECTION
+# MOOD JOURNEY
 # -----------------------------------
 
 st.divider()
@@ -134,13 +172,13 @@ st.subheader("📈 Your Mood Journey")
 
 if not df.empty:
 
-    # Chart
+    # Chart data
     chart_df = df[["timestamp", "mood_score"]].copy()
     chart_df = chart_df.set_index("timestamp")
 
     st.line_chart(chart_df)
 
-    # History
+    # Journal history
     with st.expander("📖 View Journal History"):
 
         display_df = df.rename(columns={
@@ -149,6 +187,8 @@ if not df.empty:
             "mood_score": "Mood Score",
             "mood_label": "Mood"
         })
+
+        display_df = display_df.drop(columns=["id", "user_id"])
 
         st.dataframe(
             display_df,
@@ -179,24 +219,36 @@ if not df.empty:
         col1, col2 = st.columns(2)
 
         with col1:
+
             if st.button("Yes, Delete Everything"):
 
-                cursor.execute("DELETE FROM journals")
+                cursor.execute(
+                    """
+                    DELETE FROM journals
+                    WHERE user_id = ?
+                    """,
+                    (user_id,)
+                )
+
                 conn.commit()
 
                 st.session_state.confirm_delete = False
 
-                st.success("Your journal history has been cleared.")
+                st.success(
+                    "Your journal history has been cleared."
+                )
 
                 st.rerun()
 
         with col2:
+
             if st.button("Cancel"):
 
                 st.session_state.confirm_delete = False
                 st.rerun()
 
 else:
+
     st.write(
         "Your mood history will start showing up here once you add entries."
     )
