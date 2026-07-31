@@ -3,25 +3,10 @@
 A small journalling app: write about your day, get a sentiment read on it, watch the
 trend over time.
 
-https://mindflow-app-gidfdrgldaspkjjercqyvm.streamlit.app/
+🔗 **Try it:** [mindflow-app-gidfdrgldaspkjjercqyvm.streamlit.app](https://mindflow-app-gidfdrgldaspkjjercqyvm.streamlit.app/)
 
-## Running it
-
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-python -m pytest test_mindflow.py     # 25 tests, a few seconds
-```
-
-`test_browser.py` drives a real Chromium against a live server and covers what the
-unit tests structurally can't — the cookie is written by JavaScript and read back from
-a later HTTP request, so only a browser proves that loop closes. It also restarts the
-server mid-test to check nothing is lost. It skips itself unless you set it up:
-
-```bash
-pip install playwright && playwright install --with-deps chromium
-python -m pytest test_browser.py      # ~40s
-```
+No account needed to start — open the link and write. See below for how identity and
+storage work if you want the details.
 
 ## How identity works
 
@@ -55,6 +40,22 @@ from inside. Two ways around it:
 - Point `MINDFLOW_DB_URL` at a hosted database (env var or `.streamlit/secrets.toml`).
   Because everything goes through SQLAlchemy, that's the only change needed.
 
-Run locally and the file persists normally.
+Run locally and the file persists normally. Timestamps are stored and displayed in UTC.
 
-Timestamps are stored and displayed in UTC.
+## Running it locally
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+python -m pytest test_mindflow.py     # 25 tests, a few seconds
+```
+
+`test_browser.py` drives a real Chromium against a live server and covers what the
+unit tests structurally can't — the cookie is written by JavaScript and read back from
+a later HTTP request, so only a browser proves that loop closes. It also restarts the
+server mid-test to check nothing is lost. It skips itself unless you set it up:
+
+```bash
+pip install playwright && playwright install --with-deps chromium
+python -m pytest test_browser.py      # ~40s
+```
