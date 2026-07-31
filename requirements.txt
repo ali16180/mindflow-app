@@ -1,4 +1,4 @@
-streamlit
-textblob
-pandas
-streamlit-local-storage
+streamlit==1.60.0
+textblob==0.20.1
+pandas==3.0.5
+SQLAlchemy==2.0.51
